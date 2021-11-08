@@ -1,0 +1,125 @@
+import tensorflow as tf
+import matplotlib.pyplot as plt
+import numpy as np
+import os
+import glob
+import cv2
+
+data_train = glob.glob(r'/Downloads/images/train2017/*.jpg')
+data_val = glob.glob(r'/Downloads/images/val2017/*.jpg')
+anno_train = glob.glob(r'/Downloads/annotations/annotations/stuff_train2017_pixelmaps/*.png')
+anno_val = glob.glob(r'/Downloads/annotations/annotations/stuff_val2017_pixelmaps/*.png')
+
+train = tf.data.Dataset.from_tensor_slices((data_train[:2000],anno_train[:2000]))
+val = tf.data.Dataset.from_tensor_slices((data_val[:1000],anno_val[:1000]))
+
+def read_jpg(path):
+    img=tf.io.read_file(path)
+    img=tf.image.decode_jpeg(img,channels=3)
+    return img
+
+def read_png(path):
+    img=tf.io.read_file(path)
+    img=tf.image.decode_png(img,channels=1)
+    return img
+
+# #现在编写归一化的函数
+# def normal_img(input_images,input_anno):
+#     input_images=tf.cast(input_images,tf.float32)
+#     input_images=input_images/224
+#     return input_images,input_anno
+
+#加载函数
+def load_images(input_images_path,input_anno_path):
+    input_image=read_jpg(input_images_path)
+    input_anno=read_png(input_anno_path)
+    input_image=tf.image.resize_with_pad(input_image,224,224)
+    input_anno=tf.image.resize_with_pad(input_anno,224,224)
+    return input_image,input_anno
+
+train=train.map(load_images,num_parallel_calls=tf.data.experimental.AUTOTUNE)
+val=val.map(load_images,num_parallel_calls=tf.data.experimental.AUTOTUNE)
+
+train_count = len(train)
+val_count = len(val)
+print(train_count)
+print(val_count)
+
+BATCH_SIZE = 5
+train=train.shuffle(buffer_size=500).batch(BATCH_SIZE)
+val=val.batch(BATCH_SIZE)
+
+
+conv_base=tf.keras.applications.VGG16(weights='imagenet',
+                                     input_shape=(224,224,3),
+                                     include_top=False)
+
+sub_model=tf.keras.models.Model(inputs=conv_base.input,
+                               outputs=conv_base.get_layer('block5_conv3').output)
+
+#现在创建多输出模型,三个output
+layer_names=[
+    'block5_conv3',
+    'block4_conv3',
+    'block3_conv3',
+    'block5_pool'
+]
+
+layers_output=[conv_base.get_layer(layer_name).output for layer_name in layer_names]
+
+multiout_model=tf.keras.models.Model(inputs=conv_base.input,
+                               outputs=layers_output)
+
+multiout_model.trainable=False
+
+inputs=tf.keras.layers.Input(shape=(224,224,3))
+out_block5_conv3,out_block4_conv3,out_block3_conv3,out=multiout_model(inputs)
+
+x1=tf.keras.layers.Conv2DTranspose(512,3,
+                                   strides=2,
+                                   padding='same',
+                                   activation='relu')(out)
+x1=tf.keras.layers.Conv2D(512,3,padding='same',
+                                   activation='relu')(x1)
+x2=tf.add(x1,out_block5_conv3)
+
+x2=tf.keras.layers.Conv2DTranspose(512,3,
+                                   strides=2,
+                                   padding='same',
+                                   activation='relu')(x2)
+x3=tf.add(x2,out_block4_conv3)
+x3=tf.keras.layers.Conv2DTranspose(256,3,
+                                   strides=2,
+                                   padding='same',
+                                   activation='relu')(x3)
+x3=tf.keras.layers.Conv2D(256,3,padding='same',activation='relu')(x3)
+
+x4=tf.add(x3,out_block3_conv3)
+
+x5=tf.keras.layers.Conv2DTranspose(128,3,
+                                   strides=2,
+                                   padding='same',
+                                   activation='relu')(x4)
+
+x5=tf.keras.layers.Conv2D(128,3,padding='same',activation='relu')(x5)
+
+preditcion=tf.keras.layers.Conv2DTranspose(202,3,
+                                   strides=2,
+                                   padding='same',
+                                   activation='softmax')(x5)
+model=tf.keras.models.Model(inputs=inputs, outputs=preditcion)
+model.summary()
+
+model.compile(
+optimizer='adam',
+    loss='sparse_categorical_crossentropy',
+    metrics=['acc']
+)
+
+model.fit(train,
+         epochs=10,
+         steps_per_epoch=train_count//BATCH_SIZE,
+         validation_data=val,
+         validation_steps=val_count//BATCH_SIZE)
+         
+model.save('semantic_segmentation.h5')
