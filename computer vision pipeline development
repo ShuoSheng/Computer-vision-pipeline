@@ -1,0 +1,98 @@
+def semantic_segmentation(PATH):
+    img = tf.io.read_file(PATH)
+    img = tf.image.decode_jpeg(img,channels=3)
+    img = tf.image.resize_with_pad(img,224,224)
+    img = np.expand_dims(img,axis=0)
+    print(img.shape)
+
+    model = tf.load_model('semantic_segmentation.h5')
+    model.predict(img)
+
+    img = np.squeeze(img)
+
+    plt.imshow(img)
+  
+def object_detection(img_path,
+                  label_path = '/Users/bytedance/Downloads/darknet/data/coco.names',
+                  config_path = '/Users/bytedance/Downloads/darknet/cfg/yolov3.cfg',
+                  weights_path = '/Users/bytedance/Downloads/darknet/yolov3.weights',
+                  confidence_thre = 0.5,
+                  nms_thre = 0.3,
+                  jpg_quality = 80):
+    
+    #load the image
+    img = cv2.imread('/Users/bytedance/Downloads/test_set/input/'+ img_path)
+    
+    #load the name of classes
+    classes = open(label_path).read().strip().split('\n')
+    print(classes)
+    nclass = len(classes)
+
+    #set up the colors of bounding box for each class
+    np.random.seed(42)
+    colors = np.random.randint(0,255,size=(nclass,3),dtype='uint8')
+    
+    #modle complie
+    net = cv2.dnn.readNetFromDarknet(config_path,weights_path)
+    net.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
+    
+    #load the output layers
+    ln = net.getLayerNames()
+    ln = [ln[i[0] - 1] for i in net.getUnconnectedOutLayers()] 
+    
+    #object detection
+    blob = cv2.dnn.blobFromImage(img, 1/255.0, (416,416),swapRB=True, crop=False)
+    net.setInput(blob)
+    t0 = time.time()
+    outputs = net.forward(ln)
+    t1 = time.time()
+    print('YOLO模型花费{:2f}秒来预测一张图片'.format(t1-t0))
+    
+    #nms-bouding box selection
+    boxes = []
+    confidences = []
+    classIDs = []
+    h, w = img.shape[:2]
+
+    for output in outputs:
+        print(output.shape)
+        
+        for detection in output:
+            scores = detection[5:]
+            classID = np.argmax(scores)
+            confidence = scores[classID]
+
+            if confidence > confidence_thre:
+                box = detection[0:4] * np.array([w,h,w,h])
+                (centerX, centerY, width, height) = box.astype("int")
+
+                #calculate the position of top left point
+                x = int(centerX - (width / 2))
+                y = int(centerY - (height / 2))
+
+                boxes.append([x,y,int(width),int(height)])
+                confidences.append(float(confidence))
+                classIDs.append(classID)
+
+    indices = cv2.dnn.NMSBoxes(boxes,confidences,confidence_thre,nms_thre)
+
+    if len(indices) > 0:
+        for i in indices.flatten():
+            (x,y)=(boxes[i][0],boxes[i][1])
+            (w,h)=(boxes[i][2],boxes[i][3])
+
+            color = [int(c) for c in colors[classIDs[i]]]
+            cv2.rectangle(img,(x,y),(x+w,y+h),color,2)
+            text = '{}:{:.3f}'.format(classes[classIDs[i]],confidences[i])
+            (text_w, text_h), baseline = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+            cv2.rectangle(img, (x, y-text_h-baseline), (x + text_w, y), color, -1)
+            cv2.putText(img, text, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 0), 2)
+
+    cv2.imshow('window', img)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    cv2.imwrite('/Users/bytedance/Downloads/test_set/prediction/'+img_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), jpg_quality])
+    
+def pipeline(path):
+    semantic_segmentation(path)
+    object_detection(path)
