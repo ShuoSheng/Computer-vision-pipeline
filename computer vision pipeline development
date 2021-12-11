@@ -3,19 +3,17 @@ def semantic_segmentation(PATH):
     img = tf.image.decode_jpeg(img,channels=3)
     img = tf.image.resize_with_pad(img,224,224)
     img = np.expand_dims(img,axis=0)
-    print(img.shape)
+    #print(img.shape)
 
     model = tf.keras.models.load_model('semantic_segmentation.h5')
     model.predict(img)
-
     img = np.squeeze(img)
-
     plt.imshow(img)
   
 def object_detection(img_path,
-                  label_path = '/Users/bytedance/Downloads/darknet/data/coco.names',
-                  config_path = '/Users/bytedance/Downloads/darknet/cfg/yolov3.cfg',
-                  weights_path = '/Users/bytedance/Downloads/darknet/yolov3.weights',
+                  label_path = 'darknet/data/coco.names',
+                  config_path = 'darknet/cfg/yolov3.cfg',
+                  weights_path = 'darknet/yolov3.weights',
                   confidence_thre = 0.5,
                   nms_thre = 0.3,
                   jpg_quality = 80):
@@ -46,7 +44,7 @@ def object_detection(img_path,
     t0 = time.time()
     outputs = net.forward(ln)
     t1 = time.time()
-    print('YOLO模型花费{:2f}秒来预测一张图片'.format(t1-t0))
+    print('YOLO costed {:2f} seconds to predict an image'.format(t1-t0))
     
     #nms-bouding box selection
     boxes = []
