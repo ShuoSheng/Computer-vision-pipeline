@@ -5,7 +5,7 @@ def semantic_segmentation(PATH):
     img = np.expand_dims(img,axis=0)
     print(img.shape)
 
-    model = tf.load_model('semantic_segmentation.h5')
+    model = tf.keras.models.load_model('semantic_segmentation.h5')
     model.predict(img)
 
     img = np.squeeze(img)
@@ -91,7 +91,7 @@ def object_detection(img_path,
     cv2.imshow('window', img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
-    cv2.imwrite('/Users/bytedance/Downloads/test_set/prediction/'+img_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), jpg_quality])
+    cv2.imwrite(img_path, img, [int(cv2.IMWRITE_JPEG_QUALITY), jpg_quality])
     
 def pipeline(path):
     semantic_segmentation(path)
